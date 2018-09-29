@@ -1,0 +1,653 @@
+Loan Data Exploration by Daniel Cummings
+========================================================
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Load Libraries
+library(ggplot2)
+library(ggthemes)
+library(dplyr)
+library(gridExtra)
+library(plotly)
+```
+
+```{r echo=FALSE, Load_the_Data}
+# Load the Data
+df <- read.csv('prosperLoanData.csv')
+```
+
+This report explores a dataset provided by Prosper containing loan data for approximately 114,000 loans. One area of focus will be on how different variables such as loan amount, credit grade, and borrower monthly income relate to the APR (annual percentage rate) of a loan. 
+
+# Univariate Plots Section
+
+```{r}
+# DataFrame structure
+str(df)
+```
+This data set contains 113,937 loans, with 81 features. Due to the large number of features, I'll limit the scope of the data and focus on how specific borrower features (e.g. occupation, income, credit grade, etc.) impact the annual percentage rate (APR). 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Create Credit Score feature in DataFrame
+df$CreditScoreAvg <- (df$CreditScoreRangeUpper + df$CreditScoreRangeLower)/2
+
+# Convert APR to %
+df$BorrowerAPR <- (df$BorrowerAPR * 100)
+
+# Update DataFrame to categories of interest for this project
+keeps <- c("AvailableBankcardCredit", "BorrowerAPR", "CreditGrade", 
+           "CurrentCreditLines", "CurrentDelinquencies", "CreditScoreAvg", 
+           "EmploymentStatus", "IsBorrowerHomeowner", 
+           "ListingCategory..numeric.", "LoanOriginalAmount", "LoanStatus", 
+           "MonthlyLoanPayment", "Occupation", "ProsperRating..Alpha.", 
+           "StatedMonthlyIncome", "Term")
+df <- df[keeps]
+
+# Fix DataFrame feature names
+library("plyr")
+df <- plyr::rename(df, c("ListingCategory..numeric."="ListingCategory"))
+df <- plyr::rename(df, c("ProsperRating..Alpha."="ProsperRating"))
+df <- plyr::rename(df, c("LoanOriginalAmount"="LoanAmount"))
+
+# Convert specific columns to 'factor' type and update factor naming
+df$Term <- as.factor(df$Term)
+df$ListingCategory <- as.factor(df$ListingCategory)
+levels(df$ListingCategory) <- c('Not Available', 'Debt Consolidation', 
+                                'Home Improvement', 'Business', 'Personal Loan', 
+                                'Student Use', 'Auto', 'Other', 'Baby&Adoption', 
+                                'Boat', 'Cosmetic Procedure', 'Engagement Ring', 
+                                'Green Loans', 'Household Expenses', 
+                                'Large Purchases', 'Medical/Dental', 
+                                'Motorcycle', 'RV', 'Taxes', 'Vacation', 
+                                'Wedding Loans')
+df$ProsperRating <- factor(df$ProsperRating, levels=c("HR", "E", "D", "C", "B", 
+                                                      "A", "AA"))
+df$CreditGrade <- factor(df$CreditGrade, levels=c("HR", "E", "D", "C", "B", "A", 
+                                                  "AA"))
+```
+
+```{r}
+summary(df)
+```
+
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, warning=FALSE)
+```
+
+```{r, Univariate_Plots}
+
+# Loan amount, APR and term histograms
+ggplot(data = df, aes(x = LoanAmount)) + 
+  geom_histogram(bins = 50, color = '#414451', fill = '#1f77b4') +
+  xlab("Loan Amount ($)")
+
+ggplot(data = df, aes(x = BorrowerAPR)) + 
+  geom_histogram(bins = 60, color = '#414451', fill = '#1f77b4') +
+  xlab("Borrower APR (%)")
+
+ggplot(data = df, aes(x = Term)) + 
+  geom_bar(color = '#414451', fill = '#1f77b4') +
+  xlab("Term (months)")
+```
+
+The loan data shows that borrowers preferred to take loans in nicely rounded amounts (e.g. \$10000, \$15000, \$20000). The Borrower APR shows a normal distribution centered around 21% with an anomalous mode around 36%. This behavior will be investigated further, but it is likely that the loan company sets specific APR tiers for borrowers in specific credit grade categories. The most common loan term was 36 months, followed by 60. 
+
+```{r}
+# Comparison between the credit grade and the prosper grade
+p1 <- ggplot(data = subset(df, !is.na(CreditGrade)), aes(x = CreditGrade)) + 
+  geom_bar(aes(y = (..count..)/sum(..count..)), color = '#414451', 
+           fill = '#1f77b4') +
+  scale_y_continuous(labels = scales::percent, limits = c(0, .25)) +
+  xlab("Credit Grade") +
+  ylab("Proportion of Total") 
+
+p2 <- ggplot(data = subset(df, !is.na(ProsperRating)), aes(x = ProsperRating)) + 
+  geom_bar(aes(y = (..count..)/sum(..count..)), color = '#414451', 
+           fill = '#ff7f0e') +
+  scale_y_continuous(labels = scales::percent, limits = c(0, .25)) +
+  xlab("Prosper Rating") +
+  ylab("Proportion of Total")
+
+grid.arrange(p1, p2, ncol=2)
+
+# Distribution of average credit score
+ggplot(data = subset(df, !is.na(CreditScoreAvg)), aes(x = CreditScoreAvg)) + 
+  geom_histogram(bins=25, color = '#414451', fill = '#1f77b4') +
+  scale_x_continuous(limits=c(400,900)) +
+  geom_vline(aes(xintercept = mean(CreditScoreAvg)), col='#ff7f0e', 
+             linetype='dashed', size=1) +
+  geom_text(aes(label='mean',y=1000,x=720), col='#ff7f0e',size=4) +
+  geom_vline(aes(xintercept = median(CreditScoreAvg)), col='#98df8a', 
+             linetype='dashed', size=1) +
+  geom_text(aes(label='median',y=1000,x=660), col='#98df8a',size=4) +
+  xlab("Average Credit Score")
+
+# Distribution of stated monthly income, normal and log scales
+ggplot(data = df, aes(x = StatedMonthlyIncome)) + 
+  geom_histogram(bins=40, color = '#414451', fill = '#1f77b4') +
+  scale_x_continuous(limits=c(0,50000)) +
+  xlab("Stated Monthly Income")
+
+ggplot(data = df, aes(x = StatedMonthlyIncome)) + 
+  geom_histogram(bins=40, color = '#414451', fill = '#1f77b4') + 
+  scale_x_log10(limits=c(1000,50000)) +
+  geom_vline(aes(xintercept = mean(StatedMonthlyIncome)), col='#ff7f0e',
+             linetype='dashed', size=1) +
+  geom_text(aes(label='mean',y=1000,x=7000), col='#ff7f0e', size=4) +
+  geom_vline(aes(xintercept = median(StatedMonthlyIncome)), col='#98df8a', 
+             linetype='dashed', size=1) +
+  geom_text(aes(label='median',y=1000,x=3800), col='#98df8a', size=4) +
+  xlab("Stated Monthly Income (log scale)")
+
+# Distribution of available bankcard credit, normal and log scales
+ggplot(data = subset(df, !is.na(AvailableBankcardCredit)), 
+       aes(x = AvailableBankcardCredit)) + 
+  geom_histogram(bins=40, color = '#414451', fill = '#1f77b4') + 
+  scale_x_continuous(limits=c(1,100000)) +
+  xlab("Available Bankcard Credit")
+
+ggplot(data = subset(df, !is.na(AvailableBankcardCredit)), 
+       aes(x = AvailableBankcardCredit)) + 
+  geom_histogram(bins=40, color = '#414451', fill = '#1f77b4') + 
+  scale_x_log10(limits=c(1,1000000)) +
+  geom_vline(aes(xintercept = mean(AvailableBankcardCredit)),col='#ff7f0e',
+             linetype='dashed',size=1) +
+  geom_text(aes(label='mean',y=1000,x=20000), col='#ff7f0e',size=4) +
+  geom_vline(aes(xintercept = median(AvailableBankcardCredit)),col='#98df8a',
+             linetype='dashed',size=1) +
+  geom_text(aes(label='median',y=1000,x=2000), col='#98df8a',size=4) +
+  xlab("Available Bankcard Credit (log scale)")
+```
+
+Comparing standard credit grade versus the Prosper rating, Prosper tended to give fewer borrowers a positive 'AA' rating. However, they also gave more 'E' instead of less desirable 'HR' ratings at the other end of the spectrum. The credit score is normally distributed with a median near 690. Interestingly, the histogram of all borrowers stated monthly income has a right-skewed long-tail distribution. On a log scale, the income data is centered around a median and mean of value of \$4667 and \$5608 respectively. Additionally, the available bankcard credit data follows a right-skewed long-tail distribution trend as well.
+
+
+```{r}
+# Review 'larger' counts of borrowers by Occupation
+ggplot(data = subset(df, table(Occupation)[Occupation] >= 500), 
+       aes(x = reorder(Occupation,Occupation, function(x)-length(x)))) +
+  geom_histogram(stat = "count", color = '#414451', fill = '#9edae5') + 
+  xlab("Occupation") +
+  coord_flip()
+  # theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) 
+
+# Filter largest counts to see other data value more clearly
+ggplot(data = subset(df, table(Occupation)[Occupation] >= 500 & Occupation != 
+                    "Other" & Occupation != "Professional" & Occupation != ""), 
+       aes(x = reorder(Occupation,Occupation, function(x)-length(x)))) +
+  geom_histogram(stat = "count", color = '#414451', fill = '#9edae5') +
+  xlab("Occupation") +
+  coord_flip()
+
+# Review 'smaller' counts of borrowers by Occupation
+ggplot(data = subset(df, table(Occupation)[Occupation] < 500), 
+       aes(x = reorder(Occupation,Occupation, function(x)-length(x)))) + 
+  geom_histogram(stat = "count", color = '#414451', fill = '#9edae5') + 
+  ylim(0, 600) +
+  xlab("Occupation") +
+  coord_flip()
+```
+
+The most occupations stated by borrowers fall into the 'Other' and 'Professional' categories. Ignoring these two generic categories, the next top categories are computer programmer, executive, teacher, administrator and analyst. 
+The least common borrower occupations in the dataset are in the categories of judge, dentist, and student. 
+
+```{r}
+# Borrowers by Listing Category (Loan Type)
+ggplot(data = df, 
+       aes(x = reorder(ListingCategory, ListingCategory, 
+                       function(x)-length(x)))) +
+  geom_histogram(stat = "count", color = '#414451', fill = '#9edae5') + 
+  xlab("Listing Category") +
+  coord_flip()
+
+ggplot(data = df, 
+       aes(x = reorder(ListingCategory, ListingCategory, 
+                       function(x)-length(x)))) +
+  geom_histogram(stat = "count", color = '#414451', fill = '#9edae5') + 
+  scale_y_log10() + ylab("count (log scale)") +
+  xlab("Listing Category") +
+  coord_flip()
+```
+
+Ignoring 'not available' and 'other,' the most common  reasons for loans were debt consolidation, home improvement, business, and automotive.  
+
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+
+This data set contains 113,937 loans, with 81 features for each loan. I chose to filter these features down to 16 to focus how borrower attributes such as income, credit, and occupation interact with the loan amount and APR. 
+
+Some interesting insights are revealed by the initial data summary:
+ - Median stated monthly income is $4667
+ - Approximately half of the borrowers are homeowners
+ - Average monthly loan payment is $272
+ - Average loan amount is $8337
+ - Average amount of current credit lines for each borrower is 10.32
+ - Most common borrower credit grade is 'C' and average credit score is 695
+
+### What is/are the main feature(s) of interest in your dataset?
+
+Typically, the key features of loans that a potential borrower evaluates are the term, monthly payment, and APR for a given loan amount. Another area of interest will be to look at the differences between the Credit Grade and the Prosper Ranking since they use the same ranking key (e.g. 'C', 'B', 'A', 'AA').
+
+### What other features in the dataset do you think will help support your \
+investigation into your feature(s) of interest?
+
+Conventional wisdom would dictate that the more important features for getting a competitive loan are the borrower credit score and monthly income. Addition, I will investigate the impact of occupation, listing category, available credit, and more.
+
+### Did you create any new variables from existing variables in the dataset?
+
+The credit score for each loan was provided as a lower and upper bound. For
+simplicity, I created a new variable 'CreditScoreAvg' to take the average of the
+bound. 
+
+### Of the features you investigated, were there any unusual distributions? \
+Did you perform any operations on the data to tidy, adjust, or change the form \
+of the data? If so, why did you do this?
+
+The borrower APR has a normal distribution centered around 0.21%. However, there is an anomalous peaks in the histogram at 0.30% and 0.36%. This could implyProsper implemented a generic 'common' rate based on the Prosper Rating feature. The other interesting distribution in data was for the loan amount. The most frequent loan amounts occur at nicely rounded intervals such as \$10000 and \$15000. The CreditGrade and ProsperRatings factors were reorder to put the "AA" at a higher ranking than the "A" rating. The "ListingCategory" factors were renamed to directly state the category name instead of a number key. Term and ListingCategory features were converted from integer to factor types for ease of plotting. 
+
+# Bivariate Plots Section
+
+```{r, Bivariate_Plots}
+# Credit Score vs Current Delinquencies
+ggplot(data = df, aes(x = CreditScoreAvg, y = CurrentDelinquencies)) + 
+  geom_jitter(alpha=1/25, color = '#1f77b4') + 
+  xlim(450,850) + ylim(0,30) + 
+  geom_smooth(method = 'auto', color = '#ff7f0e') +
+  xlab("Credit Score") +
+  ylab("Current Delinquencies")
+
+# Credit Score vs Monthly Payment
+ggplot(data = subset(df, MonthlyLoanPayment >0), 
+       aes(x = CreditScoreAvg, y = MonthlyLoanPayment)) + 
+  geom_jitter(alpha=1/25, color = '#1f77b4') + 
+  xlim(450,850) + ylim(0,1500) +
+  geom_smooth(method = 'auto', color = '#ff7f0e') +
+  xlab("Credit Score") +
+  ylab("Monthly Loan Payment")
+
+# Credit Score vs Credit Lines
+ggplot(data = df, aes(x = CreditScoreAvg, y = CurrentCreditLines)) + 
+  geom_jitter(alpha=1/50, color = '#1f77b4') + 
+  xlim(450,850) +
+  geom_smooth(method = 'auto', color = '#ff7f0e') +
+  xlab("Credit Score") +
+  ylab("Current Credit Lines")
+
+# Credit Score vs Bankcard credit
+ggplot(data = df, aes(x = CreditScoreAvg, y = AvailableBankcardCredit)) + 
+  geom_jitter(alpha = 1/25, color='#1f77b4') + 
+  geom_smooth(method = "auto", color = '#ff7f0e') +
+  xlim(450, 850) + ylim(0, 100000) +
+  xlab("Credit Score") +
+  ylab("Bankcard Credit ($)")
+
+#cor.test(df$CurrentDelinquencies, df$CreditScoreAvg,  method = 'pearson') 
+#-0.368
+#cor.test(df$MonthlyLoanPayment, df$CreditScoreAvg, method = 'pearson') 
+#0.293
+#cor.test(df$CurrentCreditLines, df$CreditScoreAvg,  method = 'pearson') 
+#-0.142
+#cor.test(df$AvailableBankcardCredit, df$CreditScoreAvg,  method = 'pearson') 
+#-0.453
+```
+
+Credit delinquencies shows a weak negative correlation on the borrowers credit score with some interesting outliers. For example, a few borrowers with credit scores greater that 750 had more than 10 current delinquencies). Borrowers with low credit (<600) scores tended to have lower monthly payments (and loan amounts) than those with higher credit scores (>600). Credit lines did not show much coorlation with credit score; the average was about 10 credit lines across the range. Available bankcard credit showed a clear positive correlation with credit score.
+
+```{r}
+# Credit Score vs Credit Grade
+ggplot(data = subset(df, !is.na(CreditGrade)), 
+       aes(x = CreditGrade, y = CreditScoreAvg)) + 
+  geom_boxplot() + ylim(400, 850) + 
+  scale_colour_tableau() +
+  xlab("Credit Grade") +
+  ylab("Credit Score") 
+
+# Credit Score vs Prosper Rating
+ggplot(data = subset(df, !is.na(ProsperRating)), aes(x = ProsperRating, 
+                                                     y = CreditScoreAvg)) + 
+  geom_boxplot() + 
+  ylim(400, 850) +
+  scale_colour_tableau() +
+  xlab("Prosper Rating") +
+  ylab("Credit Score") 
+```
+
+The credit grade and prosper rating differed significanly with respect to credit score. This makes sense since classically credit grade should be a function of credit score whereas Prosper likely has proprietary weighting system with multiple input in play. 
+
+```{r}
+# APR by Credit Score
+ggplot(data = df, aes(x = CreditScoreAvg, y = BorrowerAPR)) + 
+  geom_jitter(alpha = 1/25, color='#1f77b4') + 
+  geom_smooth(method = 'auto', color = '#ff7f0e') + 
+  xlim(450,850) +
+  xlab("Credit Score") +
+  ylab("Borrower APR (%)")  
+
+# APR by Current Delinquencies
+ggplot(data = df, aes(x = CurrentDelinquencies, y = BorrowerAPR)) + 
+  geom_jitter(alpha=1/25, color = '#1f77b4') + 
+  xlim(0,30) +
+  geom_smooth(method = 'auto', color = '#ff7f0e') +
+  xlab("Current Delinquencies") +
+  ylab("Borrower APR (%)")  
+
+# APR by Credit Grade - jitter shows the APR tiers from the prior histogram
+ggplot(data = subset(df, !is.na(CreditGrade)), aes(x = CreditGrade, 
+                                                   y = BorrowerAPR)) + 
+  geom_jitter(alpha=1/25, color = '#1f77b4') +
+  xlab("Credit Grade") +
+  ylab("Borrower APR (%)")  
+
+# APR by Credit Grade - jitter shows the APR tiers from the prior histogram
+ggplot(data = subset(df, !is.na(ProsperRating)), aes(x = ProsperRating, 
+                                                   y = BorrowerAPR)) + 
+  geom_jitter(alpha=1/25, color = '#1f77b4') +
+  xlab("Prosper Rating") +
+  ylab("Borrower APR (%)")  
+
+# APR by Credit Grade boxplot
+ggplot(data = subset(df, !is.na(CreditGrade)), aes(x = CreditGrade, 
+                                                   y = BorrowerAPR)) + 
+  geom_boxplot() +
+  xlab("Credit Grade") +
+  ylab("Borrower APR (%)")  
+
+# APR by Prosper ranking boxplot
+ggplot(data = subset(df, !is.na(ProsperRating)), aes(x = ProsperRating, 
+                                                   y = BorrowerAPR)) + 
+  geom_boxplot() +
+  xlab("Prosper Rating") +
+  ylab("Borrower APR (%)")  
+
+#cor.test(df$BorrowerAPR, df$CreditScoreAvg,  method = 'pearson') #-.429
+#cor.test(df$BorrowerAPR, df$CurrentDelinquencies, method = 'pearson')  #0.15
+```
+
+Credit score shows a weak to moderate negative correlation to APR. In other words, the higher the credit score, the lower the APR. Delinquencies in credit had a very week correlation to APR. Looking at APR in terms of credit grade reveals the intresting histogram results shown earlier for univariate APR. There seems to be a pattern where for each credit grade, there are several standard rates for APR. Most interestingly, the Prosper rating lines up in very clear stepping order with respect to APR. Essentially, one could reasonably estimate APR soley based on the Prosper rating. 
+
+```{r}
+# APR by Occupation
+ggplot(data = subset(df, Occupation != ""), aes(x= reorder(Occupation, 
+                                                           BorrowerAPR, 
+                                                           FUN = median), 
+                                                y = BorrowerAPR)) + 
+  geom_boxplot() +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  xlab("Occupation") +
+  ylab("Borrower APR (%)")
+
+# APR by Loan Category
+ggplot(data = df, aes(x = reorder(ListingCategory, BorrowerAPR, FUN=median), 
+                      y = BorrowerAPR)) + 
+  geom_boxplot() +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  xlab("Listing Category") +
+  ylab("Borrower APR (%)")
+
+# APR by Monthly Income
+ggplot(data = subset(df, StatedMonthlyIncome > 100 & StatedMonthlyIncome<50000), 
+       aes(x = StatedMonthlyIncome, y = BorrowerAPR)) + 
+  geom_point(alpha = 1/25, color='#1f77b4') + 
+  geom_smooth(method = "auto", color = '#ff7f0e') +
+  xlab("Stated Monthly Income ($)") +
+  ylab("Borrower APR (%)")
+
+# APR by Term
+ggplot(data = df, aes(x = Term, y = BorrowerAPR)) + geom_violin() +
+  geom_boxplot(width=0.1) +
+  xlab("Term (months)") +
+  ylab("Borrower APR (%)")
+
+#cor.test(df$BorrowerAPR, df$StatedMonthlyIncome,  method = 'pearson') #-.082
+#cor.test(df$BorrowerAPR, df$LoanAmount, method = 'pearson')  #-0.323
+```
+
+The three occupations with the highest median APR are teacher's aide, nurse's aide and bus driver. For the lowest median APR, the occupations are Judge, Doctor, and Professor. Monthly income, past $10k, didn't have a huge factor on APR. Each loan term had a similar mean/median value in relation to the APR. 
+
+```{r}
+# Loan Size by Loan Category
+ggplot(data = df, aes(x = reorder(ListingCategory, LoanAmount, 
+                                  FUN = median), y = LoanAmount)) + 
+  geom_boxplot() +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  xlab("Listing Category") +
+  ylab("Loan Amount ($)")
+
+# Loan Size by Income
+ggplot(data = subset(df, StatedMonthlyIncome > 100 & StatedMonthlyIncome<20000), 
+       aes(x = StatedMonthlyIncome, y = LoanAmount)) + 
+  geom_point(alpha = 1/25, color='#1f77b4') + 
+  geom_smooth(method = "auto", color = '#ff7f0e') +
+  xlab("Stated Monthly Income ($)") +
+  ylab("Loan Amount ($)")
+
+# Loan Size by Credit Score
+ggplot(data = df, aes(x = CreditScoreAvg, y = LoanAmount)) + 
+  geom_jitter(alpha = 1/25, color='#1f77b4') + 
+  geom_smooth(method = "auto", color = '#ff7f0e') +
+  xlim(450, 850) +
+  xlab("Credit Score") +
+  ylab("Loan Amount ($)")
+
+#cor.test(df$LoanAmount, df$StatedMonthlyIncome,method = 'pearson') #.201
+#cor.test(df$LoanAmount, df$CreditScore, method = 'pearson')  #-0.341
+```
+
+The median loan amounts for the baby/adoption and debt consolidation categories were higher than the other categories. For less than a monthly income of $10k, there was a weak correlation between monthly income and loan amount. Borrowers with higher credit scores (greater than 650) tended to take larger loans. 
+
+# Bivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. How did the feature(s) of interest vary with other features in \
+the dataset?
+
+The initial set of plots explore credit score versus various data set features. As one would expect, high deliquencies and lack of bankcard credit had a negative effect on the credit score. Interestingly, the number of credit lines open did not have a significant correlation with credit score. Credit grade had a direct relationship credit score but not so much with the 
+Prosper grade. The next set of data set explorations focused on the APR. Although it was clear that credit grade had a relationship to APR, the Prosper grade was very clearly tiered with the APR. In other words, one could reasonably estimate APR soley based on the Prosper rating. There were no surprises in the listing category, The median loan amounts for the baby/adoption and debt consolidation categories were higher than the other categories.
+
+### Did you observe any interesting relationships between the other features \
+(not the main feature(s) of interest)?
+
+Surprisingly, each loan term had a similar distribution and median relationship versus APR. I would expect that longer term loan come with a higher APR as they do in the home mortgage industry. The highest APR in terms of listing category was cosmetic procedure. I expected a category like automotive or medical to come in the top due to the often urgent nature of such expenses. 
+
+### What was the strongest relationship you found?
+
+The strongest relationship I found comparing continuous data was with credit score and APR. From a categorical perspective, the strongest relationship was between the Prosper rating and the APR.
+
+# Multivariate Plots Section
+
+The most interesting relationships in the prior section are related to the APR, monthly income, and Prosper ratings. However, before diving into the detail on these feature, I want to look at the classic term versus loan amount relationship.
+
+```{r, Multivariate_Plots}
+# Term trend accross Monthly income and Loan Amount
+ggplot(aes(x = StatedMonthlyIncome, y = LoanAmount, color = Term), data = df) +
+  geom_smooth(aes(group = Term)) + xlim(0, 50000) +
+  scale_colour_tableau() +
+  xlab("Stated Monthly Income ($)") +
+  ylab("Loan Amount ($)")
+```
+
+Comparing the loan amount, monthly income and term shows a very clear trend where larger loans are ofter associated with longer loan terms. 
+
+```{r}
+# Monthly income by APR by Prosper Rating
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, color = ProsperRating), 
+       data = subset(df, !is.na(ProsperRating))) + 
+  geom_point(alpha = 1/100) +
+  geom_smooth(method = 'gam', aes(group = ProsperRating)) + 
+  xlim(100, 20000) + ylim(0, 40) +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)") +
+  scale_colour_tableau()
+```
+
+In the bivariate plots section, it was shown that a very clear relationship existed between the Prosper rating and the APR. Interestingly, monthly income does not play a large role in the Prosper/APR relationship. 
+
+```{r}
+# Monthly income, APR, LoanAmount - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, color = LoanAmount), 
+       data = subset(df, !is.na(ProsperRating))) + 
+  geom_point() +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)") +
+  ggtitle("Prosper Rating") 
+
+# Monthly income, APR, credit - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, 
+           color = AvailableBankcardCredit), 
+       data = subset(df, !is.na(ProsperRating) & 
+                       AvailableBankcardCredit < 50000)) + 
+  geom_point() +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)") +
+  ggtitle("Prosper Rating") 
+```
+
+Since the Prosper rating has such a strong relationship with APR, I chose to facet by the Prosper rating and look a additional features. The larger loans are more common for borrowers with better Prosper ratings. Likewise, the higher bank card credit, the better the APR and Prosper rating.
+
+```{r}
+# Monthly income, APR, credit score 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, 
+           color = CreditScoreAvg >690), 
+       data = subset(df, !is.na(CreditScoreAvg) & CreditScoreAvg > 480)) + 
+  geom_point(alpha=1/5) + xlim(0, 30000) +
+  scale_colour_tableau() +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)")
+
+# Monthly income, APR, credit score - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, color = CreditScoreAvg), 
+       data = subset(df, !is.na(ProsperRating) & 
+                       !is.na(CreditScoreAvg) & CreditScoreAvg < 850)) + 
+  geom_point() +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  ggtitle("Prosper Rating") +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)")
+  
+# Monthly income, APR, credit score - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, 
+           color = CreditScoreAvg >690), 
+       data = subset(df, !is.na(ProsperRating) & !is.na(CreditScoreAvg))) + 
+  geom_point(alpha = 1/2) +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  ggtitle("Prosper Rating") +
+  scale_colour_tableau() +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)")
+```
+
+The median credit score for this data set was 690. Higher credit scores almost always are associated with lower APRs and better Prosper ratings. 
+
+```{r}
+# Monthly income, APR, homeowner status - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, 
+           color = IsBorrowerHomeowner), 
+       data = subset(df, !is.na(ProsperRating) )) + 
+  geom_point(alpha = 1/2) +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  ggtitle("Prosper Rating") +
+  scale_colour_tableau() +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)")
+
+# Monthly income, APR, Term - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, color = Term), 
+       data = subset(df, !is.na(ProsperRating) )) + 
+  geom_point(alpha = 1/2) +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  ggtitle("Prosper Rating") +
+  scale_colour_tableau() +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)")
+```
+
+The home ownership status of borrowers had lesser impact on which Prosper rating and APR they were assigned. Likewise, loan term length seemed similarly distributed across Prosper ratings with the exception of the "HR" rating. 
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the \
+investigation. Were there features that strengthened each other in terms of \
+looking at your feature(s) of interest?
+
+The APR/Prosper rating feature were the main are of interest in this section. Higher credit score, higher bankcard credit and higher monthly income all provided similar beneficial relationships with the borrowers Prosper ranking and APR.
+
+### Were there any interesting or surprising interactions between features?
+
+Of interest was the insight that home ownership status had little impact on the Prosper ranking/APR. It is likely that Prosper cares more about the credit score (and bankcard credit, income) of the borrower as opposed to the home ownership status. 
+
+### OPTIONAL: Did you create any models with your dataset? Discuss the \
+strengths and limitations of your model.
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r, Plot_One}
+# APR by Prosper ranking boxplot
+ggplot(data = subset(df, !is.na(ProsperRating)), aes(x = ProsperRating, 
+                                                   y = BorrowerAPR)) + 
+  geom_boxplot() +
+  xlab("Prosper Rating") +
+  ylab("Borrower APR (%)") 
+```
+
+### Description One
+Getting a loan with a low APR is what most borrowers look for. Once a borrower is assigned a Prosper rating, it is pretty clear what APR range could be expected. 
+
+### Plot Two
+```{r, Plot_Two}
+# Monthly income, APR, LoanAmount - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, color = LoanAmount), 
+       data = subset(df, !is.na(ProsperRating))) + 
+  geom_point() +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)") +
+  ggtitle("Prosper Rating") 
+```
+
+### Description Two
+If a borrower wants to take a large loan with a low APR, it helps to have a high monthly income and a good Prosper rating. Not surprisingly, a strong income can help offset a lukewarm Proser rating like "C" in getting a large loan. However, there will be an APR penalty for this case. 
+
+### Plot Three
+```{r, Plot_Three}
+# Monthly income, APR, credit score - facet by Prosper Rating 
+ggplot(aes(x = StatedMonthlyIncome, y = BorrowerAPR, 
+           color = CreditScoreAvg > 690), 
+       data = subset(df, !is.na(ProsperRating) & !is.na(CreditScoreAvg))) + 
+  geom_point(alpha = 1/2) +
+  facet_grid(. ~ ProsperRating ) +
+  xlim(0, 30000) +
+  theme(axis.text.x=element_text(angle = 90, hjust=1, vjust=0.05)) +
+  ggtitle("Prosper Rating") +
+  scale_colour_tableau() +
+  xlab("Stated Montly Income ($)") +
+  ylab("Borrower APR (%)")
+```
+
+### Description Three
+Credit score matters! There is a reason why so much emphasis is placed on credit score with regards to loans. A good credit score is major factor in getting a good APR as shown above.  
+
+------
+
+# Reflection
+
+The Prosper loan data was particularly enjoyable to explore since it did not focus on the usual large home mortgage style loans. Personal loan data lends some intersting insights from the occupation and listing category perspectives. One area of work that was time consuming was determining what plot layouts best described the data. It took a while to arrive at the faceting of the Prosper grade for the multi-variable analysis, but this precipitated an avalanche of more explorations on my part where the end result was gratifying. For future work I would like to include additional insight for featrues as a function of time such as loan origination date and quarter. 
